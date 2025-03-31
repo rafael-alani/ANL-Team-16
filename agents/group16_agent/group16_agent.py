@@ -48,6 +48,7 @@ class Group16Agent(DefaultParty):
         self.other: str = None
         self.settings: Settings = None
         self.storage_dir: str = None
+        self.next_bid: Bid = None
         self.got_opponent = False
 
         self.last_received_bid: Bid = None
@@ -173,9 +174,10 @@ class Group16Agent(DefaultParty):
             # if so, accept the offer
             action = Accept(self.me, self.last_received_bid)
         else:
-            # if not, find a bid to propose as counter offer
-            bid = self.find_bid()
-            action = Offer(self.me, bid)
+            # if not, propose a bid as counteroffer
+            if self.next_bid is None:
+                self.next_bid = self.find_bid()
+            action = Offer(self.me, self.next_bid)
 
         # send the action
         self.send_action(action)
@@ -201,13 +203,12 @@ class Group16Agent(DefaultParty):
 
         # progress of the negotiation session between 0 and 1 (1 is deadline)
         progress = self.progress.get(time() * 1000)
+        # Find the next bid we will offer, accept if current offer is better than our next bid
+        if self.next_bid is None:
+            self.next_bid = self.find_bid()
 
-        # very basic approach that accepts if the offer is valued above 0.7 and
-        # 95% of the time towards the deadline has passed
-        conditions = [
-            self.profile.getUtility(bid) > 0.8,
-            progress > 0.95,
-        ]
+        if self.profile.getUtility(self.next_bid) <= self.profile.getUtility(bid):
+            return True
 
         # First phase, before the soft threshold (0 < progress < 0.6)
         if progress < 0.6:
@@ -218,6 +219,7 @@ class Group16Agent(DefaultParty):
             return self.profile.getUtility(bid) >= 0.75
 
         # Third phase, critical phase (0.9 <= progress < 1)
+        # TODO
         return True
 
     def find_bid(self) -> Bid:
