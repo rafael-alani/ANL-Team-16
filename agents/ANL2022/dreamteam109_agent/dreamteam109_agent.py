@@ -112,6 +112,7 @@ class DreamTeam109Agent(DefaultParty):
             self.profile = profile_connection.getProfile()
             self.domain = self.profile.getDomain()
             # compose a list of all possible bids
+            # RAFA: save all bids as a property
             self.all_bids = AllBidsList(self.domain)
 
             profile_connection.close()
@@ -128,6 +129,7 @@ class DreamTeam109Agent(DefaultParty):
                     self.other = actor
                     # obtain the name of the opponent, cutting of the position ID.
                     self.other_name = str(actor).rsplit("_", 1)[0]
+                    # RAFA: load any previous data from file and adapt
                     self.attempt_load_data()
                     self.learn_from_past_sessions(self.data_dict["sessions"])
 
@@ -207,6 +209,7 @@ class DreamTeam109Agent(DefaultParty):
             # set bid as last received
             self.last_received_bid = bid
 
+            # RAFA: add opponent_best_bid, if existant update it
             if self.opponent_best_bid is None:
                 self.opponent_best_bid = bid
             elif self.profile.getUtility(bid) > self.profile.getUtility(self.opponent_best_bid):
@@ -264,7 +267,7 @@ class DreamTeam109Agent(DefaultParty):
             "progressAtFinish": progress_at_finish,
             "utilityAtFinish": self.utility_at_finish,
             "didAccept": self.did_accept,
-            "isGood": self.utility_at_finish >= self.min_util,
+            "isGood": self.utility_at_finish >= selfisGood.min_util,
             "topBidsPercentage": self.top_bids_percentage,
             "forceAcceptAtRemainingTurns": self.force_accept_at_remaining_turns
         }
