@@ -1,6 +1,7 @@
-# python objects to store oponent information
+# python objects to store opponent information
+import pandas
 
-class Oponent:
+class Opponent:
     def __init__(self, result = 0, finalUtility = 0, offerVariance = []):
         self.result = result
         self.finalUtility = finalUtility
@@ -9,8 +10,15 @@ class Oponent:
 
 
 def get_opponent_data(name):
-    #for now returns default opponent
-    henri = Oponent()
-    #also can be henri = Oponent(1, .5, [1,2,2,,1])
-    #you can also do henri.result [or whatever you name the return of this function] and compute on that
-    return henri
+    file_path = f"saved/{name}.plk"
+
+    try:
+        opponent = pd.read_pickle(file_path)
+        if not isinstance(opponent, Opponent):
+            raise ValueError("Deserialized object is not of type Opponent")
+    except (FileNotFoundError, ValueError, Exception):
+        print(f"File not found or invalid data. Creating default Opponent for {name}.")
+        opponent = Opponent(name)
+        pd.to_pickle(opponent, file_path)
+
+    return opponent
