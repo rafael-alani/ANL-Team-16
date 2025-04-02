@@ -1,12 +1,12 @@
 # python objects to store opponent information
 import pandas
 
+
 class Opponent:
     def __init__(self, result = 0, finalUtility = 0, offerVariance = []):
         self.result = result
         self.finalUtility = finalUtility
         self.offerVariance = offerVariance
-
 
 
 def get_opponent_data(name):
