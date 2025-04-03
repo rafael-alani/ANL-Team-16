@@ -166,7 +166,7 @@ class Group16Agent(DefaultParty):
         to perform and send this action to the opponent.
         """
         if(not self.got_opponent):
-            self.opponent = wrapper.get_opponent_data(self.other)
+            self.opponent = wrapper.get_opponent_data(self.parameters.get("storage_dir"), self.other)
             self.got_opponent = True
         # check if the last received offer is good enough
         if self.accept_condition(self.last_received_bid):
@@ -185,8 +185,7 @@ class Group16Agent(DefaultParty):
         for learning capabilities. Note that no extensive calculations can be done within this method.
         Taking too much time might result in your agent being killed, so use it for storage only.
         """
-        #TODO:Adrien save
-        wrapper.save_opponent_data(self.opponent)
+        wrapper.save_opponent_data(self.parameters.get("storage_dir"), self.opponent)
         self.got_opponent = False
         data = "Data for learning (see README.md)"
         with open(f"{self.storage_dir}/data.md", "w") as f:
