@@ -48,6 +48,7 @@ class Group16Agent(DefaultParty):
         self.other: str = None
         self.settings: Settings = None
         self.storage_dir: str = None
+        self.got_opponent = False
 
         self.last_received_bid: Bid = None
         self.opponent_model: OpponentModel = None
@@ -164,7 +165,9 @@ class Group16Agent(DefaultParty):
         """This method is called when it is our turn. It should decide upon an action
         to perform and send this action to the opponent.
         """
-        self.opponent = wrapper.get_opponent_data(self,"harold")
+        if(not self.got_opponent):
+            self.opponent = wrapper.get_opponent_data(self.other)
+            self.got_opponent = True
         # check if the last received offer is good enough
         if self.accept_condition(self.last_received_bid):
             # if so, accept the offer
@@ -184,6 +187,7 @@ class Group16Agent(DefaultParty):
         """
         #TODO:Adrien save
         wrapper.save_opponent_data(self.opponent)
+        self.got_opponent = False
         data = "Data for learning (see README.md)"
         with open(f"{self.storage_dir}/data.md", "w") as f:
             f.write(data)

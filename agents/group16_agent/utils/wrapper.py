@@ -18,7 +18,8 @@ class Opponent:
         return self.result
 
 
-def get_opponent_data(him, name):
+def get_opponent_data(name):
+
     file_path = f"agents/group16_agent/utils/saved\{name}.plk"
     if not os.path.exists('agents/group16_agent/utils/saved'):
         os.makedirs('agents/group16_agent/utils/saved')
