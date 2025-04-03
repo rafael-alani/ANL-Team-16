@@ -152,11 +152,19 @@ class Group16Agent(DefaultParty):
                 self.opponent_model = OpponentModel(self.domain)
 
             bid = cast(Offer, action).getBid()
+            
+            # Get our utility for this bid
+            our_utility = float(self.profile.getUtility(bid))
 
-            # update opponent model with bid
-            self.opponent_model.update(bid)
+            # update opponent model with bid and our utility
+            self.opponent_model.update(bid, our_utility)
+            
             # set bid as last received
             self.last_received_bid = bid
+            
+            # Store best bid if this one has the highest utility for us so far
+            if hasattr(self.opponent_model, 'best_bid_for_us') and self.opponent_model.best_bid_for_us is not None:
+                self.opponent_best_bid = self.opponent_model.best_bid_for_us
 
     def my_turn(self):
         """This method is called when it is our turn. It should decide upon an action
@@ -179,6 +187,21 @@ class Group16Agent(DefaultParty):
         for learning capabilities. Note that no extensive calculations can be done within this method.
         Taking too much time might result in your agent being killed, so use it for storage only.
         """
+        # TODO: Implement data saving for opponent modeling
+        # - Save opponent type classification (HARDHEADED, CONCEDER, NEUTRAL)
+        # - Save concession rates for each opponent
+        # - Save top issues for each opponent identified by get_top_issues()
+        # - This will help improve bidding/acceptance strategies in future negotiations
+        #
+        # Example code:
+        # if self.opponent_model and hasattr(self.opponent_model, 'get_opponent_type'):
+        #     opponent_data = {
+        #         "type": self.opponent_model.get_opponent_type(),
+        #         "concession_rate": self.opponent_model.get_concession_rate(),
+        #         "top_issues": self.opponent_model.get_top_issues(3)
+        #     }
+        #     # Save this data for later use
+        
         data = "Data for learning (see README.md)"
         with open(f"{self.storage_dir}/data.md", "w") as f:
             f.write(data)
@@ -194,6 +217,19 @@ class Group16Agent(DefaultParty):
         # progress of the negotiation session between 0 and 1 (1 is deadline)
         progress = self.progress.get(time() * 1000)
 
+        # NOTE FOR ACCEPTANCE STRATEGY IMPLEMENTER:
+        # Use the opponent model to improve acceptance strategy:
+        # 1. self.opponent_model.get_opponent_type() - Returns opponent strategy type (HARDHEADED, CONCEDER, NEUTRAL)
+        # 2. self.opponent_model.get_concession_rate() - Get opponent's concession rate
+        # 3. self.opponent_model.best_bid_for_us - Best bid received (highest utility for us)
+        #
+        # Example for using opponent type in acceptance:
+        # opponent_type = self.opponent_model.get_opponent_type()
+        # if opponent_type == "HARDHEADED" and progress > 0.8:
+        #     # Accept lower utility bids from hardheaded opponents late in negotiation
+        #     return self.profile.getUtility(bid) >= 0.7
+        
+        # Current basic implementation below:
         # very basic approach that accepts if the offer is valued above 0.7 and
         # 95% of the time towards the deadline has passed
         conditions = [
@@ -213,6 +249,24 @@ class Group16Agent(DefaultParty):
         return True
 
     def find_bid(self) -> Bid:
+        # NOTE FOR BIDDING STRATEGY IMPLEMENTER:
+        # Use the opponent model to improve bidding strategy:
+        # 1. self.opponent_model.get_opponent_type() - Returns opponent type (HARDHEADED, CONCEDER, NEUTRAL)
+        # 2. self.opponent_model.get_top_issues(3) - Returns top 3 issues important to opponent as [(issue_id, weight),...]
+        # 3. self.opponent_model.get_predicted_utility(bid) - Estimate opponent's utility for a bid
+        # 4. self.opponent_model.best_bid_for_us - Best bid received (highest utility for us)
+        #
+        # Example of using opponent's top issues to create bids they prefer:
+        # top_issues = self.opponent_model.get_top_issues(2)  # Get top 2 most important issues
+        # # Then create bids that have good values for the opponent on these important issues
+        #
+        # Example of using opponent type to adjust strategy:
+        # opponent_type = self.opponent_model.get_opponent_type()
+        # if opponent_type == "CONCEDER":
+        #     # With conceder opponents, we can propose higher utility bids for us
+        #     # ...
+        
+        # Current basic implementation below:
         # compose a list of all possible bids
         domain = self.profile.getDomain()
         all_bids = AllBidsList(domain)
@@ -226,6 +280,11 @@ class Group16Agent(DefaultParty):
             bid_score = self.score_bid(bid)
             if bid_score > best_bid_score:
                 best_bid_score, best_bid = bid_score, bid
+
+        # RAFA: we're late in the negotiation, consider returning the best bid we received
+        progress = self.progress.get(time() * 1000)
+        if progress > 0.95 and hasattr(self.opponent_model, 'best_bid_for_us') and self.opponent_model.best_bid_for_us is not None:
+            return self.opponent_model.best_bid_for_us
 
         return best_bid
 

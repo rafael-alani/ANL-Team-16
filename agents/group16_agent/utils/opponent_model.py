@@ -1,4 +1,6 @@
 from collections import defaultdict
+import logging
+from typing import Dict, List, Tuple, Optional
 
 from geniusweb.issuevalue.Bid import Bid
 from geniusweb.issuevalue.DiscreteValueSet import DiscreteValueSet
@@ -10,20 +12,73 @@ class OpponentModel:
     def __init__(self, domain: Domain):
         self.offers = []
         self.domain = domain
-
+        
+        # Track best bid for us (highest utility for our agent)
+        self.best_bid_for_us = None
+        self.best_bid_utility = 0.0
+        
+        # Issue estimators to track opponent preferences
         self.issue_estimators = {
             i: IssueEstimator(v) for i, v in domain.getIssuesValues().items()
         }
+        
+        # Track opponent strategy type
+        self.bid_count = 0
+        self.concession_rate = 0.0
+        self.repeated_bids = defaultdict(int)
+        
+        # Track history of opponent utilities to analyze concession
+        self.opponent_utilities = []
 
-    def update(self, bid: Bid):
-        # keep track of all bids received
+    def update(self, bid: Bid, our_utility: float = None):
+        """Update the opponent model with a new bid
+        
+        Args:
+            bid (Bid): New bid from opponent
+            our_utility (float, optional): Our utility for this bid
+        """
+        # Track all received bids
         self.offers.append(bid)
-
-        # update all issue estimators with the value that is offered for that issue
+        self.bid_count += 1
+        
+        # Count repeated bids (use string representation for hashability)
+        bid_str = str(bid)
+        self.repeated_bids[bid_str] += 1
+        
+        # Update best bid for us if applicable
+        if our_utility is not None and (self.best_bid_for_us is None or our_utility > self.best_bid_utility):
+            self.best_bid_for_us = bid
+            self.best_bid_utility = our_utility
+        
+        # Update all issue estimators
         for issue_id, issue_estimator in self.issue_estimators.items():
             issue_estimator.update(bid.getValue(issue_id))
+        
+        # Calculate opponent utility and track it
+        opponent_utility = self.get_predicted_utility(bid)
+        self.opponent_utilities.append(opponent_utility)
+        
+        # Update concession rate if we have at least 2 bids
+        if len(self.opponent_utilities) >= 2:
+            # Simple concession rate - average decrease in utility between consecutive bids
+            decreases = []
+            for i in range(1, len(self.opponent_utilities)):
+                diff = self.opponent_utilities[i-1] - self.opponent_utilities[i]
+                if diff > 0:  # Only count decreases in utility (actual concessions)
+                    decreases.append(diff)
+            
+            if decreases:
+                self.concession_rate = sum(decreases) / len(decreases)
 
-    def get_predicted_utility(self, bid: Bid):
+    def get_predicted_utility(self, bid: Bid) -> float:
+        """Predict the opponent's utility for a bid
+        
+        Args:
+            bid (Bid): Bid to evaluate
+            
+        Returns:
+            float: Predicted utility between 0 and 1
+        """
         if len(self.offers) == 0 or bid is None:
             return 0
 
@@ -55,6 +110,61 @@ class OpponentModel:
         )
 
         return predicted_utility
+    
+    def get_opponent_type(self) -> str:
+        """Identify opponent negotiation strategy type
+        
+        Returns:
+            str: Strategy type (HARDHEADED, CONCEDER, or UNKNOWN)
+        """
+        if self.bid_count < 3:
+            return "UNKNOWN"
+        
+        # Check for hardheaded opponent (low concession rate, many repeated bids)
+        unique_bids = len(self.repeated_bids)
+        bid_repetition_ratio = unique_bids / self.bid_count
+        
+        if self.concession_rate < 0.02 or bid_repetition_ratio < 0.5:
+            return "HARDHEADED"
+        elif self.concession_rate > 0.05:
+            return "CONCEDER"
+        else:
+            return "NEUTRAL"
+    
+    def get_concession_rate(self) -> float:
+        """Get the opponent's concession rate
+        
+        Returns:
+            float: Concession rate (higher means more concessions)
+        """
+        return self.concession_rate
+    
+    def get_top_issues(self, n: int = 3) -> List[Tuple[str, float]]:
+        """Get the top n most important issues for the opponent
+        
+        Args:
+            n (int, optional): Number of issues to return. Defaults to 3.
+            
+        Returns:
+            List[Tuple[str, float]]: List of (issue_id, weight) tuples
+        """
+        # Get normalized issue weights
+        total_weight = sum(est.weight for est in self.issue_estimators.values())
+        
+        if total_weight == 0:
+            # Equal weights if no data yet
+            equal_weight = 1.0 / len(self.issue_estimators)
+            issues = [(issue_id, equal_weight) for issue_id in self.issue_estimators.keys()]
+        else:
+            # Normalize weights
+            issues = [(issue_id, est.weight / total_weight) 
+                    for issue_id, est in self.issue_estimators.items()]
+        
+        # Sort by weight and return top n
+        issues.sort(key=lambda x: x[1], reverse=True)
+        return issues[:n]
+    
+    # TODO: Add methods to save/load opponent data for persistent learning
 
 
 class IssueEstimator:
