@@ -8,5 +8,6 @@ results
 
 *.sbatch
 *.log
+agents/group16_agent/utils/saved/*.plk
 
 .idea
