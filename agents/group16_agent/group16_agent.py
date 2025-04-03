@@ -25,18 +25,21 @@ from geniusweb.profileconnection.ProfileConnectionFactory import (
 )
 from geniusweb.progress.ProgressTime import ProgressTime
 from geniusweb.references.Parameters import Parameters
+from numpy import floor
 from tudelft_utilities_logging.ReportToLogger import ReportToLogger
 
 from .utils.opponent_model import OpponentModel
 
 
-class TemplateAgent(DefaultParty):
+class Group16Agent(DefaultParty):
     """
     The amazing Python geniusweb agent made by team 16.
     """
 
     def __init__(self):
         super().__init__()
+        self.bids_with_utilities = None
+        self.best_bid = None
         self.logger: ReportToLogger = self.getReporter()
 
         self.domain: Domain = None
@@ -191,6 +194,11 @@ class TemplateAgent(DefaultParty):
         if bid is None:
             return False
 
+        # keep track of the best bid the opponent made so far
+        utility = self.profile.getUtility(bid)
+        if self.best_bid is None or self.profile.getUtility(self.best_bid) < utility:
+            self.best_bid = bid
+
         # progress of the negotiation session between 0 and 1 (1 is deadline)
         progress = self.progress.get(time() * 1000)
 
@@ -213,45 +221,45 @@ class TemplateAgent(DefaultParty):
         return True
 
     def find_bid(self) -> Bid:
-        # compose a list of all possible bids
+        """
+        Determines the next bid to offer.
+        - Starts by offering bids from the top 1% ranked by utility.
+        - Expands the bid range dynamically as time progresses, up to the top 20%.
+        - If time is running out, proposes the best bid received from the opponent.
+        """
+
+        # Retrieve all possible bids in the domain
         domain = self.profile.getDomain()
         all_bids = AllBidsList(domain)
+        num_of_bids = all_bids.size()
 
-        best_bid_score = 0.0
-        best_bid = None
+        # If bids with utilities haven't been calculated yet, compute them
+        if self.bids_with_utilities is None:
+            self.bids_with_utilities = []
 
-        # take 500 attempts to find a bid according to a heuristic score
-        for _ in range(500):
-            bid = all_bids.get(randint(0, all_bids.size() - 1))
-            bid_score = self.score_bid(bid)
-            if bid_score > best_bid_score:
-                best_bid_score, best_bid = bid_score, bid
+            # Calculate utility for each bid and store them in a list
+            for index in range(num_of_bids):
+                bid = all_bids.get(index)
+                bid_utility = float(self.profile.getUtility(bid))
+                self.bids_with_utilities.append((bid, bid_utility))
 
-        return best_bid
+            # Sort bids by utility from high to low
+            self.bids_with_utilities.sort(key=lambda tup: tup[1], reverse=True)
 
-    def score_bid(self, bid: Bid, alpha: float = 0.95, eps: float = 0.1) -> float:
-        """Calculate heuristic score for a bid
-
-        Args:
-            bid (Bid): Bid to score
-            alpha (float, optional): Trade-off factor between self interested and
-                altruistic behaviour. Defaults to 0.95.
-            eps (float, optional): Time pressure factor, balances between conceding
-                and Boulware behaviour over time. Defaults to 0.1.
-
-        Returns:
-            float: score
-        """
+        # Get the current progress of the negotiation (0 to 1 scale)
         progress = self.progress.get(time() * 1000)
 
-        our_utility = float(self.profile.getUtility(bid))
+        # Expand the range of acceptable bids over time (starts at 1% and increases gradually up to 20%)
+        increasing_percentage = min(0.01 + progress * 0.19, 0.2)
+        expanded_top_bids = max(5, floor(num_of_bids * increasing_percentage))
 
-        time_pressure = 1.0 - progress ** (1 / eps)
-        score = alpha * time_pressure * our_utility
+        # Dynamically decrease threshold: as time progresses, the threshold lowers, making concessions more likely
+        dynamic_threshold = max(0.5, 1 - progress * 0.5)
 
-        if self.opponent_model is not None:
-            opponent_utility = self.opponent_model.get_predicted_utility(bid)
-            opponent_score = (1.0 - alpha * time_pressure) * opponent_utility
-            score += opponent_score
+        # If progress exceeds the threshold, offer the best bid from the opponent
+        if progress > dynamic_threshold:
+            return self.best_bid if self.best_bid else self.bids_with_utilities[0][0]
 
-        return score
+        # Randomly select a bid from the expanded top bids range
+        next_bid = randint(0, expanded_top_bids - 1)
+        return self.bids_with_utilities[next_bid][0]
