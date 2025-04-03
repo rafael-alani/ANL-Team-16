@@ -28,6 +28,7 @@ from geniusweb.references.Parameters import Parameters
 from tudelft_utilities_logging.ReportToLogger import ReportToLogger
 
 from .utils.opponent_model import OpponentModel
+from .utils import wrapper
 
 
 class Group16Agent(DefaultParty):
@@ -47,9 +48,11 @@ class Group16Agent(DefaultParty):
         self.other: str = None
         self.settings: Settings = None
         self.storage_dir: str = None
+        self.got_opponent = False
 
         self.last_received_bid: Bid = None
         self.opponent_model: OpponentModel = None
+        self.opponent = None
         self.logger.log(logging.INFO, "party is initialized")
 
     def notifyChange(self, data: Inform):
@@ -170,6 +173,9 @@ class Group16Agent(DefaultParty):
         """This method is called when it is our turn. It should decide upon an action
         to perform and send this action to the opponent.
         """
+        if(not self.got_opponent):
+            self.opponent = wrapper.get_opponent_data(self.parameters.get("storage_dir"), self.other)
+            self.got_opponent = True
         # check if the last received offer is good enough
         if self.accept_condition(self.last_received_bid):
             # if so, accept the offer
@@ -187,21 +193,8 @@ class Group16Agent(DefaultParty):
         for learning capabilities. Note that no extensive calculations can be done within this method.
         Taking too much time might result in your agent being killed, so use it for storage only.
         """
-        # TODO: Implement data saving for opponent modeling
-        # - Save opponent type classification (HARDHEADED, CONCEDER, NEUTRAL)
-        # - Save concession rates for each opponent
-        # - Save top issues for each opponent identified by get_top_issues()
-        # - This will help improve bidding/acceptance strategies in future negotiations
-        #
-        # Example code:
-        # if self.opponent_model and hasattr(self.opponent_model, 'get_opponent_type'):
-        #     opponent_data = {
-        #         "type": self.opponent_model.get_opponent_type(),
-        #         "concession_rate": self.opponent_model.get_concession_rate(),
-        #         "top_issues": self.opponent_model.get_top_issues(3)
-        #     }
-        #     # Save this data for later use
-        
+        wrapper.save_opponent_data(self.parameters.get("storage_dir"), self.opponent)
+        self.got_opponent = False
         data = "Data for learning (see README.md)"
         with open(f"{self.storage_dir}/data.md", "w") as f:
             f.write(data)
