@@ -28,6 +28,7 @@ from geniusweb.references.Parameters import Parameters
 from tudelft_utilities_logging.ReportToLogger import ReportToLogger
 
 from .utils.opponent_model import OpponentModel
+from .utils import wrapper
 
 
 class Group16Agent(DefaultParty):
@@ -50,6 +51,7 @@ class Group16Agent(DefaultParty):
 
         self.last_received_bid: Bid = None
         self.opponent_model: OpponentModel = None
+        self.opponent = None
         self.logger.log(logging.INFO, "party is initialized")
 
     def notifyChange(self, data: Inform):
@@ -162,6 +164,7 @@ class Group16Agent(DefaultParty):
         """This method is called when it is our turn. It should decide upon an action
         to perform and send this action to the opponent.
         """
+        self.opponent = wrapper.get_opponent_data(self,"harold")
         # check if the last received offer is good enough
         if self.accept_condition(self.last_received_bid):
             # if so, accept the offer
@@ -179,6 +182,8 @@ class Group16Agent(DefaultParty):
         for learning capabilities. Note that no extensive calculations can be done within this method.
         Taking too much time might result in your agent being killed, so use it for storage only.
         """
+        #TODO:Adrien save
+        wrapper.save_opponent_data(self.opponent)
         data = "Data for learning (see README.md)"
         with open(f"{self.storage_dir}/data.md", "w") as f:
             f.write(data)

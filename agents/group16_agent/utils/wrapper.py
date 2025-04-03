@@ -1,7 +1,6 @@
 # python objects to store opponent information
 import pandas as pd
-import logging
-from tudelft_utilities_logging.ReportToLogger import ReportToLogger
+import os
 
 
 class Opponent:
@@ -20,10 +19,9 @@ class Opponent:
 
 
 def get_opponent_data(him, name):
-
-    him.logger.log(logging.INFO, "\n\n\n\n\n\nfunction called as wanted \n\n\n\n\n\n")
-    file_path = f"saved/{name}.plk"
-
+    file_path = f"agents/group16_agent/utils/saved\{name}.plk"
+    if not os.path.exists('agents/group16_agent/utils/saved'):
+        os.makedirs('agents/group16_agent/utils/saved')
     try:
         opponent = pd.read_pickle(file_path)
         if not isinstance(opponent, Opponent):
@@ -38,8 +36,14 @@ def get_opponent_data(him, name):
 
 
 def save_opponent_data(opponent):
+    if(opponent == None):
+        print("we have a problem opponent is None")
+        return
     if isinstance(opponent, Opponent):
-        file_path = f"saved/{opponent.name}.plk"
+        print(f"we are saving {opponent.name}")
+        file_path = f"agents/group16_agent/utils/saved\{opponent.name}.plk"
+        if not os.path.exists('agents/group16_agent/utils/saved'):
+            os.makedirs('agents/group16_agent/utils/saved')
         pd.to_pickle(opponent, file_path)
     else:
         print("Non opponent saved")
