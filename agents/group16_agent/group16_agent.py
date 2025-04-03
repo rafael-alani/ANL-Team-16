@@ -48,8 +48,9 @@ class Group16Agent(DefaultParty):
         self.other: str = None
         self.settings: Settings = None
         self.storage_dir: str = None
-        self.next_bid: Bid = None
         self.got_opponent = False
+        self.next_bid: Bid = None
+        self.best_bid: Bid = None
 
         self.last_received_bid: Bid = None
         self.opponent_model: OpponentModel = None
@@ -193,10 +194,6 @@ class Group16Agent(DefaultParty):
         with open(f"{self.storage_dir}/data.md", "w") as f:
             f.write(data)
 
-    ###########################################################################################
-    ################################## Example methods below ##################################
-    ###########################################################################################
-
     def accept_condition(self, bid: Bid) -> bool:
         if bid is None:
             return False
@@ -207,16 +204,20 @@ class Group16Agent(DefaultParty):
         if self.next_bid is None:
             self.next_bid = self.find_bid()
 
-        if self.profile.getUtility(self.next_bid) <= self.profile.getUtility(bid):
+        utility = self.profile.getUtility(bid)
+        if self.profile.getUtility(self.best_bid) < utility:
+            self.best_bid = bid
+
+        if self.profile.getUtility(self.next_bid) <= utility:
             return True
 
         # First phase, before the soft threshold (0 < progress < 0.6)
         if progress < 0.6:
-            return self.profile.getUtility(bid) >= 0.9
+            return utility >= 0.85
 
         # Second phase, before hard threshold (0.6 <= progress < 0.9)
         if progress < 0.9:
-            return self.profile.getUtility(bid) >= 0.75
+            return utility >= 0.7
 
         # Third phase, critical phase (0.9 <= progress < 1)
         # TODO
