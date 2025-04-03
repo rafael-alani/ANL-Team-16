@@ -26,6 +26,14 @@ class OpponentModel:
         self.bid_count = 0
         self.concession_rate = 0.0
         self.repeated_bids = defaultdict(int)
+
+        # learn from previous mistakes
+        self.force_accept_at_remaining_turns = 1
+        self.force_accept_at_remaining_turns_light = 1
+        
+        self.hard_accept_at_turn_X = 1
+        self.soft_accept_at_turn_X = 1
+        self.top_bids_percentage = 1/300
         
         # Track history of opponent utilities to analyze concession
         self.opponent_utilities = []
@@ -166,6 +174,45 @@ class OpponentModel:
     
     # TODO: Add methods to save/load opponent data for persistent learning
 
+    def learn_from_past_sessions(self, sessions: list[SessionData]):
+        hard_accept_levels = [0, 0, 1, 1.1]
+        soft_accept_levels = [0, 1, 1.1]
+        top_bids_levels = [1 / 300, 1 / 100, 1 / 30]
+        
+        # fully failed
+        failed_sessions_count = 0
+        for session in sessions:
+            if self.did_fail(session):
+                failed_sessions_count += 1
+        
+        # low utility
+        low_utility_sessions_count = 0
+        for session in sessions:
+            if self.low_utility(session):
+                low_utility_sessions_count += 1
+        
+        # hard accept based on previous failed sessions
+        if failed_sessions_count >= len(hard_accept_levels):
+            accept_index = len(hard_accept_levels) - 1
+        else:
+            accept_index = failed_sessions_count
+        self.hard_accept_at_turn_X = hard_accept_levels[accept_index]
+        # self.force_accept_at_remaining_turns = hard_accept_levels[accept_index]
+        
+        # soft 
+        if failed_sessions_count >= len(soft_accept_levels):
+            light_accept_index = len(soft_accept_levels) - 1
+        else:
+            light_accept_index = failed_sessions_count
+        self.soft_accept_at_turn_X = soft_accept_levels[light_accept_index]
+        # self.force_accept_at_remaining_turns_light = soft_accept_levels[light_accept_index]
+        
+        # Set top_bids_percentage based on low utility sessions
+        if low_utility_sessions_count >= len(top_bids_levels):
+            top_bids_index = len(top_bids_levels) - 1
+        else:
+            top_bids_index = low_utility_sessions_count
+        self.top_bids_percentage = top_bids_levels[top_bids_index]
 
 class IssueEstimator:
     def __init__(self, value_set: DiscreteValueSet):

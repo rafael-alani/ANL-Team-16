@@ -217,54 +217,29 @@ class Group16Agent(DefaultParty):
         # progress of the negotiation session between 0 and 1 (1 is deadline)
         progress = self.progress.get(time() * 1000)
 
-        # NOTE FOR ACCEPTANCE STRATEGY IMPLEMENTER:
+        # NOTE
         # Use the opponent model to improve acceptance strategy:
         # 1. self.opponent_model.get_opponent_type() - Returns opponent strategy type (HARDHEADED, CONCEDER, NEUTRAL)
         # 2. self.opponent_model.get_concession_rate() - Get opponent's concession rate
         # 3. self.opponent_model.best_bid_for_us - Best bid received (highest utility for us)
-        #
-        # Example for using opponent type in acceptance:
-        # opponent_type = self.opponent_model.get_opponent_type()
-        # if opponent_type == "HARDHEADED" and progress > 0.8:
-        #     # Accept lower utility bids from hardheaded opponents late in negotiation
-        #     return self.profile.getUtility(bid) >= 0.7
-        
-        # Current basic implementation below:
+
+
         # very basic approach that accepts if the offer is valued above 0.7 and
         # 95% of the time towards the deadline has passed
         conditions = [
             self.profile.getUtility(bid) > 0.8,
             progress > 0.95,
         ]
-
-        # First phase, before the soft threshold (0 < progress < 0.6)
-        if progress < 0.6:
-            return self.profile.getUtility(bid) >= 0.9
-
-        # Second phase, before hard threshold (0.6 <= progress < 0.9)
-        if progress < 0.9:
-            return self.profile.getUtility(bid) >= 0.75
-
-        # Third phase, critical phase (0.9 <= progress < 1)
-        return True
+        return all(conditions)
 
     def find_bid(self) -> Bid:
-        # NOTE FOR BIDDING STRATEGY IMPLEMENTER:
+        # NOTE
         # Use the opponent model to improve bidding strategy:
         # 1. self.opponent_model.get_opponent_type() - Returns opponent type (HARDHEADED, CONCEDER, NEUTRAL)
         # 2. self.opponent_model.get_top_issues(3) - Returns top 3 issues important to opponent as [(issue_id, weight),...]
         # 3. self.opponent_model.get_predicted_utility(bid) - Estimate opponent's utility for a bid
         # 4. self.opponent_model.best_bid_for_us - Best bid received (highest utility for us)
-        #
-        # Example of using opponent's top issues to create bids they prefer:
-        # top_issues = self.opponent_model.get_top_issues(2)  # Get top 2 most important issues
-        # # Then create bids that have good values for the opponent on these important issues
-        #
-        # Example of using opponent type to adjust strategy:
-        # opponent_type = self.opponent_model.get_opponent_type()
-        # if opponent_type == "CONCEDER":
-        #     # With conceder opponents, we can propose higher utility bids for us
-        #     # ...
+        
         
         # Current basic implementation below:
         # compose a list of all possible bids
