@@ -174,7 +174,7 @@ class OpponentModel:
     
     # TODO: Add methods to save/load opponent data for persistent learning
 
-    def learn_from_past_sessions(self, sessions: list[SessionData]):
+    def learn_from_past_sessions(self, sessions: list):
         hard_accept_levels = [0, 0, 1, 1.1]
         soft_accept_levels = [0, 1, 1.1]
         top_bids_levels = [1 / 300, 1 / 100, 1 / 30]
@@ -196,16 +196,16 @@ class OpponentModel:
             accept_index = len(hard_accept_levels) - 1
         else:
             accept_index = failed_sessions_count
-        self.hard_accept_at_turn_X = hard_accept_levels[accept_index]
-        # self.force_accept_at_remaining_turns = hard_accept_levels[accept_index]
+        #self.hard_accept_at_turn_X = hard_accept_levels[accept_index]
+        self.force_accept_at_remaining_turns = hard_accept_levels[accept_index]
         
         # soft 
         if failed_sessions_count >= len(soft_accept_levels):
             light_accept_index = len(soft_accept_levels) - 1
         else:
             light_accept_index = failed_sessions_count
-        self.soft_accept_at_turn_X = soft_accept_levels[light_accept_index]
-        # self.force_accept_at_remaining_turns_light = soft_accept_levels[light_accept_index]
+        #self.soft_accept_at_turn_X = soft_accept_levels[light_accept_index]
+        self.force_accept_at_remaining_turns_light = soft_accept_levels[light_accept_index]
         
         # Set top_bids_percentage based on low utility sessions
         if low_utility_sessions_count >= len(top_bids_levels):

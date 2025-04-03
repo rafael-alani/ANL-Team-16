@@ -53,6 +53,12 @@ class Group16Agent(DefaultParty):
         self.last_received_bid: Bid = None
         self.opponent_model: OpponentModel = None
         self.opponent = None
+        self.opponent_best_bid: Bid = None
+        
+        # Session tracking
+        self.utility_at_finish: float = 0.0
+        self.did_accept: bool = False
+        
         self.logger.log(logging.INFO, "party is initialized")
 
     def notifyChange(self, data: Inform):
@@ -104,6 +110,16 @@ class Group16Agent(DefaultParty):
 
         # Finished will be send if the negotiation has ended (through agreement or deadline)
         elif isinstance(data, Finished):
+            # RAFA: check if agreement reached
+            agreements = cast(Finished, data).getAgreements()
+            if len(agreements.getMap()) > 0:
+                agreed_bid = agreements.getMap()[self.me]
+                self.utility_at_finish = float(self.profile.getUtility(agreed_bid))
+                self.logger.log(logging.INFO, f"Agreement reached with utility: {self.utility_at_finish}")
+            else:
+                self.utility_at_finish = 0.0
+                self.logger.log(logging.INFO, "No agreement reached")
+            
             self.save_data()
             # terminate the agent MUST BE CALLED
             self.logger.log(logging.INFO, "party is terminating:")
@@ -175,11 +191,17 @@ class Group16Agent(DefaultParty):
         """
         if(not self.got_opponent):
             self.opponent = wrapper.get_opponent_data(self.parameters.get("storage_dir"), self.other)
+            # Apply opponent learned parameters using OpponentModel's learn_from_past_sessions
+            if self.opponent_model is not None and self.opponent.sessions:
+                # Use the existing learn_from_past_sessions method in the OpponentModel class
+                self.opponent_model.learn_from_past_sessions(self.opponent.sessions)
             self.got_opponent = True
+            
         # check if the last received offer is good enough
         if self.accept_condition(self.last_received_bid):
             # if so, accept the offer
             action = Accept(self.me, self.last_received_bid)
+            self.did_accept = True
         else:
             # if not, find a bid to propose as counter offer
             bid = self.find_bid()
@@ -193,7 +215,16 @@ class Group16Agent(DefaultParty):
         for learning capabilities. Note that no extensive calculations can be done within this method.
         Taking too much time might result in your agent being killed, so use it for storage only.
         """
-        wrapper.save_opponent_data(self.parameters.get("storage_dir"), self.opponent)
+        # One-liner that calls wrapper to handle all session data creation and saving
+        wrapper.create_and_save_session_data(
+            opponent=self.opponent,
+            savepath=self.parameters.get("storage_dir"),
+            progress=self.progress.get(time() * 1000),
+            utility_at_finish=self.utility_at_finish,
+            did_accept=self.did_accept,
+            opponent_model=self.opponent_model
+        )
+        
         self.got_opponent = False
         data = "Data for learning (see README.md)"
         with open(f"{self.storage_dir}/data.md", "w") as f:
@@ -210,20 +241,18 @@ class Group16Agent(DefaultParty):
         # progress of the negotiation session between 0 and 1 (1 is deadline)
         progress = self.progress.get(time() * 1000)
 
-        # NOTE
-        # Use the opponent model to improve acceptance strategy:
-        # 1. self.opponent_model.get_opponent_type() - Returns opponent strategy type (HARDHEADED, CONCEDER, NEUTRAL)
-        # 2. self.opponent_model.get_concession_rate() - Get opponent's concession rate
-        # 3. self.opponent_model.best_bid_for_us - Best bid received (highest utility for us)
-
+        # Use learned parameters from opponent model
+        threshold = 0.95
+        if self.opponent_model and hasattr(self.opponent_model, 'force_accept_at_remaining_turns'):
+            threshold = max(0.85, 1 - 0.3 * self.opponent_model.force_accept_at_remaining_turns)
 
         # very basic approach that accepts if the offer is valued above 0.7 and
         # 95% of the time towards the deadline has passed
         conditions = [
             self.profile.getUtility(bid) > 0.8,
-            progress > 0.95,
+            progress > threshold,
         ]
-        return all(conditions)
+        return any(conditions)
 
     def find_bid(self) -> Bid:
         # NOTE
@@ -251,8 +280,8 @@ class Group16Agent(DefaultParty):
 
         # RAFA: we're late in the negotiation, consider returning the best bid we received
         progress = self.progress.get(time() * 1000)
-        if progress > 0.95 and hasattr(self.opponent_model, 'best_bid_for_us') and self.opponent_model.best_bid_for_us is not None:
-            return self.opponent_model.best_bid_for_us
+        if progress > 0.95 and self.opponent_best_bid is not None:
+            return self.opponent_best_bid
 
         return best_bid
 
