@@ -182,13 +182,15 @@ class OpponentModel:
         # fully failed
         failed_sessions_count = 0
         for session in sessions:
-            if self.did_fail(session):
+            # Check if session failed (utility == 0)
+            if isinstance(session, dict) and session.get("utilityAtFinish", 1) == 0:
                 failed_sessions_count += 1
         
         # low utility
         low_utility_sessions_count = 0
         for session in sessions:
-            if self.low_utility(session):
+            # Check if session had low utility (utility < 0.5)
+            if isinstance(session, dict) and session.get("utilityAtFinish", 1) < 0.5:
                 low_utility_sessions_count += 1
         
         # hard accept based on previous failed sessions

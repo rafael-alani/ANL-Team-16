@@ -267,7 +267,7 @@ class DreamTeam109Agent(DefaultParty):
             "progressAtFinish": progress_at_finish,
             "utilityAtFinish": self.utility_at_finish,
             "didAccept": self.did_accept,
-            "isGood": self.utility_at_finish >= selfisGood.min_util,
+            "isGood": self.utility_at_finish >= self.min_util,
             "topBidsPercentage": self.top_bids_percentage,
             "forceAcceptAtRemainingTurns": self.force_accept_at_remaining_turns
         }
