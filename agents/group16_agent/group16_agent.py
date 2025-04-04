@@ -189,7 +189,8 @@ class Group16Agent(DefaultParty):
         """This method is called when it is our turn. It should decide upon an action
         to perform and send this action to the opponent.
         """
-        if(not self.got_opponent):
+        # Only try to load opponent data if we know who the opponent is, might be wrong
+        if self.other is not None and not self.got_opponent:
             self.opponent = wrapper.get_opponent_data(self.parameters.get("storage_dir"), self.other)
             # Apply opponent learned parameters using OpponentModel's learn_from_past_sessions
             if self.opponent_model is not None and self.opponent.sessions:
@@ -215,15 +216,18 @@ class Group16Agent(DefaultParty):
         for learning capabilities. Note that no extensive calculations can be done within this method.
         Taking too much time might result in your agent being killed, so use it for storage only.
         """
-        # One-liner that calls wrapper to handle all session data creation and saving
-        wrapper.create_and_save_session_data(
-            opponent=self.opponent,
-            savepath=self.parameters.get("storage_dir"),
-            progress=self.progress.get(time() * 1000),
-            utility_at_finish=self.utility_at_finish,
-            did_accept=self.did_accept,
-            opponent_model=self.opponent_model
-        )
+        # problem with  trying to save opponent data if we don't have an opponent response yet
+        if self.other is not None and self.opponent is not None:
+            wrapper.create_and_save_session_data(
+                opponent=self.opponent,
+                savepath=self.parameters.get("storage_dir"),
+                progress=self.progress.get(time() * 1000),
+                utility_at_finish=self.utility_at_finish,
+                did_accept=self.did_accept,
+                opponent_model=self.opponent_model
+            )
+        else:
+            self.logger.log(logging.INFO, "No opponent data to save (opponent unknown or no model created)")
         
         self.got_opponent = False
         data = "Data for learning (see README.md)"
