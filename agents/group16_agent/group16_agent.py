@@ -451,8 +451,8 @@ class Group16Agent(DefaultParty):
                 eligible_bids.append((bid, utility))
                 # this has to be tested
                 # TEST
-                if len(eligible_bids) >= 100:
-                    break
+                # if len(eligible_bids) >= 100:
+                #     break
         
         # randomly select one
         if eligible_bids:
