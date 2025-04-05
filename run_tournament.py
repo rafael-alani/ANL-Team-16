@@ -21,6 +21,10 @@ tournament_settings = {
             "class": "agents.group16_agent.group16_agent.Group16Agent",
             "parameters": {"storage_dir": "agent_storage/Group16Agent"},
         },
+        {
+           "class": "agents.ANL2022.dreamteam109_agent.dreamteam109_agent.DreamTeam109Agent",
+           "parameters": {"storage_dir": "agent_storage/ANL2022/DreamTeam109Agent"},
+        },
         # {
         #     "class": "agents.boulware_agent.boulware_agent.BoulwareAgent",
         # },
