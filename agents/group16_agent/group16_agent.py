@@ -82,6 +82,8 @@ class Group16Agent(DefaultParty):
         self.min_target_utility: float = 0.7
         
         # deadline management
+        self.initial_treshold_1 = 0.98
+        self.initial_treshold_2 = 0.95
         self.avg_time_per_round = None
         self.round_times = []
         self.last_time = None
@@ -259,7 +261,7 @@ class Group16Agent(DefaultParty):
             self.opponent = wrapper.get_opponent_data(self.parameters.get("storage_dir"), self.other)
             
             if self.opponent_model is not None and self.opponent.sessions:
-                self.opponent_model.learn_from_past_sessions(self.opponent.sessions)
+                self.opponent_model.update_parameters_using_encounters(self.opponent.sessions)
             self.got_opponent = True
             
         # check if the last received offer is good enough
@@ -335,7 +337,6 @@ class Group16Agent(DefaultParty):
         this should be later changed
         Adjusted based on opponent's concession behavior
         """
-        # # Base values 
         umax = self.max_target_utility
         umin = self.min_target_utility
         
@@ -356,13 +357,13 @@ class Group16Agent(DefaultParty):
         self.max_target_utility = umax
         self.min_target_utility = umin
 
-        # Cap the minimum
+        # cap the minimum, as to not concede too much
         return max(target, umin)
 
     def accept_condition(self, bid: Bid) -> bool:
         """Determine whether to accept opponent's bid
-        ???
-        Uses DreamTeam-style dynamic thresholds and Gahboninho's target utility
+        Uses dynamic thresholds based on a variable target utility
+        partialy inspired by Gahboninho and DreamTeam
         """
         if bid is None:
             return False
@@ -379,18 +380,19 @@ class Group16Agent(DefaultParty):
         target_utility = self.calculate_target_utility(progress)
         
         # dynamic thresholds
-        threshold = 0.98
-        light_threshold = 0.95
+        threshold_1 = self.initial_treshold_1
+        threshold_2 = self.initial_treshold_2
+        second_to_millisecond = 1000
         if self.avg_time_per_round is not None:
-            threshold = 1 - 1000 * self.opponent_model.force_accept_at_remaining_turns  * self.avg_time_per_round / self.progress.getDuration()
-            light_threshold = 1 - 5000 * self.opponent_model.force_accept_at_remaining_turns_light * self.avg_time_per_round / self.progress.getDuration()
+            threshold_1 = 1 - 1 * second_to_millisecond * self.opponent_model.deadline_urgency_factor  * self.avg_time_per_round / self.progress.getDuration()
+            threshold_2 = 1 - 5 * second_to_millisecond * self.opponent_model.early_deadline_urgency_factor * self.avg_time_per_round / self.progress.getDuration()
         
         # Accept conditions
         conditions = [
             utility > 0.9,                                   # amazing offer, just accept
             utility >= target_utility,                       # meets target
-            progress > threshold,                            # close to deadline
-            progress > light_threshold and utility >= target_utility - 0.05  # close to deadline and we have someting with close
+            progress > threshold_1,                            # close to deadline
+            progress > threshold_2 and utility >= target_utility - 0.05  # close to deadline and we have someting with close
             # to our target uility
         ]
         return any(conditions)
@@ -424,7 +426,7 @@ class Group16Agent(DefaultParty):
         # start considering opponent's best bid
         light_threshold = 0.95
         if self.avg_time_per_round is not None:
-            light_threshold = 1 - 5000 * self.opponent_model.force_accept_at_remaining_turns_light * self.avg_time_per_round / self.progress.getDuration()
+            light_threshold = 1 - 5000 * self.opponent_model.early_deadline_urgency_factor * self.avg_time_per_round / self.progress.getDuration()
             
         if progress > light_threshold and self.best_bid is not None:
             best_bid_utility = float(self.profile.getUtility(self.best_bid))
@@ -456,10 +458,10 @@ class Group16Agent(DefaultParty):
         if eligible_bids:
             return choice(eligible_bids)[0]
         
-        # If no eligible bids found, fallback to a utility-based approach with expanding range
-        top_percentage = max(0.01, min(0.2, self.opponent_model.top_bids_percentage + progress * 0.19))
-        expanded_top_bids = max(5, floor(self.all_bids.size() * top_percentage))
-        next_bid = randint(0, min(expanded_top_bids, len(self.bids_with_utilities)) - 1)
-        self.logger.log(logging.INFO, f"Interesting: {top_percentage}, {expanded_top_bids}, {next_bid}")
+        # # no eligible bids found, fallback to a utility-based approach with expanding range
+        # top_percentage = max(0.01, min(0.2, self.opponent_model.top_bids_percentage + progress * 0.19))
+        # expanded_top_bids = max(5, floor(self.all_bids.size() * top_percentage))
+        # next_bid = randint(0, min(expanded_top_bids, len(self.bids_with_utilities)) - 1)
+        # self.logger.log(logging.INFO, f"Interesting: {top_percentage}, {expanded_top_bids}, {next_bid}")
         
         return self.bids_with_utilities[next_bid][0]
