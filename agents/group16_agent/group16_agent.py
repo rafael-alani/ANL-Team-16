@@ -335,24 +335,27 @@ class Group16Agent(DefaultParty):
         this should be later changed
         Adjusted based on opponent's concession behavior
         """
-        # Base values 
+        # # Base values 
         umax = self.max_target_utility
         umin = self.min_target_utility
         
         # if opponent doesn't concede much (low variance and rate), we should be more willing to concede
         if self.opponent_utility_variance < 0.01 or self.concession_rate < 0.02:
             concession_factor = 1.1
-            umin = max(0.65, umin - 0.05)  # ???
+            umin = max(0.65, umin - 0.05)
         elif self.opponent_utility_variance > 0.03 or self.concession_rate > 0.05:
 
             concession_factor = 0.8
-            umin = min(0.85, umin + 0.05)  # ???
+            umin = min(0.85, umin + 0.05)
         else:
             concession_factor = 1.0
         
         # Gahboninho's formula with the modified concession factor
         target = umax - (umax - umin) * progress * concession_factor
         
+        self.max_target_utility = umax
+        self.min_target_utility = umin
+
         # Cap the minimum
         return max(target, umin)
 
@@ -413,7 +416,7 @@ class Group16Agent(DefaultParty):
         
         # highest bids possible
         if self.round_count < 5:
-            # this could also be constant ???
+            # this could also be constant
             target_utility = max(0.9, 0.95 - self.round_count * 0.01)
         else:
             target_utility = self.calculate_target_utility(progress)
