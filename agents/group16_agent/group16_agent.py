@@ -219,15 +219,11 @@ class Group16Agent(DefaultParty):
         ]
         return all(conditions)
 
-
-    # paper 1:
-    # paper 2: https://www.researchgate.net/publication/2526436_Multi-Issue_Negotiation_Under_Time_Constraints
     def find_bid(self) -> Bid:
         """
         Determines the next bid to offer.
-        - Starts by offering bids from the top 1% ranked by utility.
-        - Expands the bid range dynamically as time progresses, up to the top 20%.
-        - If time is running out, proposes the best bid received from the opponent.
+        - If the opponent's best bid's utility is sufficient, offer it
+        - Else, start by offering bids from the top 1% ranked by utility, expand the bid range as time progresses
         """
 
         # Get the current progress of the negotiation (0 to 1 scale)
@@ -241,9 +237,9 @@ class Group16Agent(DefaultParty):
             random_variation = uniform(-0.02, 0.02)
             random_strategy = choice(['linear', 'quadratic'])
             if random_strategy == 'linear':
-                min_utility_threshold = max(0.5, min(1.0, -0.5 * progress + 1 + random_variation))
+                min_utility_threshold = max(0.6, min(1.0, -0.4 * progress + 1 + random_variation))
             else:
-                min_utility_threshold = max(0.5, min(1.0, -0.5 * (progress ** 2) + 1 + random_variation))
+                min_utility_threshold = max(0.6, min(1.0, -0.4 * (progress ** 2) + 1 + random_variation))
 
             best_bid_utility = float(self.profile.getUtility(self.best_bid))
 
