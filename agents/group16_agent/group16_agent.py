@@ -1,7 +1,8 @@
 import logging
 from random import randint, uniform, choice
+from statistics import variance, mean
 from time import time
-from typing import cast
+from typing import cast, List
 
 from geniusweb.actions.Accept import Accept
 from geniusweb.actions.Action import Action
@@ -34,11 +35,13 @@ from .utils import wrapper
 
 class Group16Agent(DefaultParty):
     """
-    The amazing Python geniusweb agent made by team 16.
-    Should store general information so that geniuse web works
-    Should store information about the current exchange that isn't related to the opponent
-    Opponent model should store information about the opponent
-    Opponent/Wrapper should store information about the opponent that we want persistent between encounters
+    Group16 agent implementing Gahboninho's strategy with session data integration.
+    
+    Key features:
+    - Uses variance in opponent bids to estimate concession willingness
+    - Calculates target utility using Ut = Umax - (Umax - Umin) * t formula
+    - Integrates session data from previous negotiations
+    - Uses random selection of bids above target utility
     """
 
     def __init__(self):
@@ -58,13 +61,36 @@ class Group16Agent(DefaultParty):
         self.storage_dir: str = None
         self.got_opponent = False
 
+        # Tracking bids and utilities
         self.last_received_bid: Bid = None
         self.opponent_model: OpponentModel = None
         self.opponent = None
+        self.all_bids: AllBidsList = None
+        
+        # Gahboninho strategy parameters
+        self.round_count: int = 0
+        self.opponent_utilities: List[float] = []
+        self.concession_rate: float = 0.0
+        self.opponent_utility_variance: float = 0.0
+        self.probing_phase_complete: bool = False
+        
+        # Target utility parameters (Gahboninho)
+        self.max_target_utility: float = 0.95
+        self.min_target_utility: float = 0.7
+        
+        # For deadline management (DreamTeam)
+        self.avg_time_per_round = None
+        self.round_times = []
+        self.last_time = None
         
         # Session tracking
         self.utility_at_finish: float = 0.0
         self.did_accept: bool = False
+        
+        # Parameters from past sessions (DreamTeam)
+        self.force_accept_at_remaining_turns: float = 1.0
+        self.force_accept_at_remaining_turns_light: float = 1.0
+        self.top_bids_percentage: float = 1/300
         
         self.logger.log(logging.INFO, "party is initialized")
 
@@ -95,6 +121,10 @@ class Group16Agent(DefaultParty):
             )
             self.profile = profile_connection.getProfile()
             self.domain = self.profile.getDomain()
+            
+            # Initialize list of all possible bids
+            self.all_bids = AllBidsList(self.domain)
+            
             profile_connection.close()
 
         # ActionDone informs you of an action (an offer or an accept)
@@ -117,7 +147,7 @@ class Group16Agent(DefaultParty):
 
         # Finished will be send if the negotiation has ended (through agreement or deadline)
         elif isinstance(data, Finished):
-            # RAFA: check if agreement reached
+            # Check if agreement reached
             agreements = cast(Finished, data).getAgreements()
             if len(agreements.getMap()) > 0:
                 agreed_bid = agreements.getMap()[self.me]
@@ -163,7 +193,7 @@ class Group16Agent(DefaultParty):
         Returns:
             str: Agent description
         """
-        return "Team 16's agent, the best agent in the tournament!"
+        return "Team 16's GahboniTeam agent using adaptive concession based on opponent behavior"
 
     def opponent_action(self, action):
         """Process an action that was received from the opponent.
@@ -185,20 +215,52 @@ class Group16Agent(DefaultParty):
             # update opponent model with bid and our utility
             self.opponent_model.update(bid, our_utility)
             
+            # Keep track of the best bid the opponent made
+            if self.best_bid is None or our_utility > float(self.profile.getUtility(self.best_bid)):
+                self.best_bid = bid
+            
+            # Track opponent utility for Gahboninho analysis
+            opponent_utility = self.opponent_model.get_predicted_utility(bid)
+            self.opponent_utilities.append(opponent_utility)
+            
             # set bid as last received
             self.last_received_bid = bid
+            
+            # After receiving at least 5 bids, calculate concession metrics
+            if len(self.opponent_utilities) >= 5 and not self.probing_phase_complete:
+                self.update_concession_metrics()
+                self.probing_phase_complete = True
+            # Continue updating metrics as we receive more bids
+            elif len(self.opponent_utilities) >= 5:
+                self.update_concession_metrics()
 
     def my_turn(self):
         """This method is called when it is our turn. It should decide upon an action
         to perform and send this action to the opponent.
         """
-        # Only try to load opponent data if we know who the opponent is, might be wrong
+        # Track timing for deadline management
+        current_time = time()
+        if self.last_time is not None:
+            round_time = current_time - self.last_time
+            self.round_times.append(round_time)
+            if len(self.round_times) >= 3:
+                self.avg_time_per_round = mean(self.round_times[-3:])
+        self.last_time = current_time
+        
+        # Track round count for probing phase
+        self.round_count += 1
+        
+        # Load opponent data from previous sessions
         if self.other is not None and not self.got_opponent:
             self.opponent = wrapper.get_opponent_data(self.parameters.get("storage_dir"), self.other)
             # Apply opponent learned parameters using OpponentModel's learn_from_past_sessions
             if self.opponent_model is not None and self.opponent.sessions:
-                # Use the existing learn_from_past_sessions method in the OpponentModel class
+                # Use the existing learn_from_past_sessions method
                 self.opponent_model.learn_from_past_sessions(self.opponent.sessions)
+                # Copy learned parameters to main agent
+                self.force_accept_at_remaining_turns = self.opponent_model.force_accept_at_remaining_turns
+                self.force_accept_at_remaining_turns_light = self.opponent_model.force_accept_at_remaining_turns_light
+                self.top_bids_percentage = self.opponent_model.top_bids_percentage
             self.got_opponent = True
             
         # check if the last received offer is good enough
@@ -206,10 +268,12 @@ class Group16Agent(DefaultParty):
             # if so, accept the offer
             action = Accept(self.me, self.last_received_bid)
             self.did_accept = True
+            self.logger.log(logging.INFO, f"Accepting bid with utility: {float(self.profile.getUtility(self.last_received_bid))}")
         else:
             # if not, find a bid to propose as counter offer
             bid = self.find_bid()
             action = Offer(self.me, bid)
+            self.logger.log(logging.INFO, f"Offering bid with utility: {float(self.profile.getUtility(bid))}")
 
         # send the action
         self.send_action(action)
@@ -219,7 +283,7 @@ class Group16Agent(DefaultParty):
         for learning capabilities. Note that no extensive calculations can be done within this method.
         Taking too much time might result in your agent being killed, so use it for storage only.
         """
-        # problem with  trying to save opponent data if we don't have an opponent response yet
+        # Save opponent data for future sessions
         if self.other is not None and self.opponent is not None:
             wrapper.create_and_save_session_data(
                 opponent=self.opponent,
@@ -237,108 +301,159 @@ class Group16Agent(DefaultParty):
         with open(f"{self.storage_dir}/data.md", "w") as f:
             f.write(data)
 
-    ###########################################################################################
-    ################################## Example methods below ##################################
-    ###########################################################################################
+    def update_concession_metrics(self):
+        """Update metrics about the opponent's concession behavior
+        
+        This implements part of Gahboninho's approach to measure opponent's willingness to concede
+        based on variance in utilities and concession rate
+        """
+        try:
+            # Calculate variance in opponent utilities
+            self.opponent_utility_variance = variance(self.opponent_utilities)
+            
+            # Calculate concession rate
+            # (simple approach: how much did opponent concede on average between consecutive bids)
+            total_decrease = 0.0
+            decreases_count = 0
+            
+            for i in range(1, len(self.opponent_utilities)):
+                diff = self.opponent_utilities[i-1] - self.opponent_utilities[i]
+                if diff > 0:  # Only count actual concessions
+                    total_decrease += diff
+                    decreases_count += 1
+            
+            self.concession_rate = total_decrease / max(1, decreases_count)
+            
+            self.logger.log(logging.INFO, f"Opponent utility variance: {self.opponent_utility_variance}")
+            self.logger.log(logging.INFO, f"Opponent concession rate: {self.concession_rate}")
+            
+        except Exception as e:
+            self.logger.log(logging.WARNING, f"Error calculating concession metrics: {e}")
+
+    def calculate_target_utility(self, progress: float) -> float:
+        """Calculate target utility using Gahboninho's formula:
+        Ut = Umax - (Umax - Umin) * t
+        
+        Adjusted based on opponent's concession behavior
+        """
+        # Base values 
+        umax = self.max_target_utility
+        umin = self.min_target_utility
+        
+        # Adjust based on observed concession behavior
+        # If opponent doesn't concede much (low variance and rate), we should be more willing to concede
+        if self.opponent_utility_variance < 0.01 or self.concession_rate < 0.02:
+            # Low concession opponent - be more flexible
+            concession_factor = 1.1
+            umin = max(0.65, umin - 0.05)  # Lower our minimum acceptable utility
+        elif self.opponent_utility_variance > 0.03 or self.concession_rate > 0.05:
+            # High concession opponent - be more stubborn
+            concession_factor = 0.8
+            umin = min(0.85, umin + 0.05)  # Raise our minimum acceptable utility
+        else:
+            # Neutral concession behavior
+            concession_factor = 1.0
+        
+        # Apply Gahboninho's formula with the concession factor
+        target = umax - (umax - umin) * progress * concession_factor
+        
+        # Cap the minimum
+        return max(target, umin)
 
     def accept_condition(self, bid: Bid) -> bool:
+        """Determine whether to accept opponent's bid
+        
+        Uses DreamTeam-style dynamic thresholds and Gahboninho's target utility
+        """
         if bid is None:
             return False
 
+        # Get our utility for this bid
+        utility = float(self.profile.getUtility(bid))
+        
         # Keep track of the best bid the opponent made so far
-        utility = self.profile.getUtility(bid)
-        if self.best_bid is None or self.profile.getUtility(self.best_bid) < utility:
+        if self.best_bid is None or float(self.profile.getUtility(self.best_bid)) < utility:
             self.best_bid = bid
 
-        # progress of the negotiation session between 0 and 1 (1 is deadline)
+        # Progress of the negotiation session between 0 and 1 (1 is deadline)
         progress = self.progress.get(time() * 1000)
-
-        # Use learned parameters from opponent model
-        threshold = 0.95
-        if self.opponent_model and hasattr(self.opponent_model, 'force_accept_at_remaining_turns'):
-            threshold = max(0.85, 1 - 0.3 * self.opponent_model.force_accept_at_remaining_turns)
-
-        # very basic approach that accepts if the offer is valued above 0.7 and
-        # 95% of the time towards the deadline has passed
+        
+        # Calculate current target utility using Gahboninho's formula
+        target_utility = self.calculate_target_utility(progress)
+        
+        # DreamTeam-style dynamic thresholds
+        threshold = 0.98
+        light_threshold = 0.95
+        if self.avg_time_per_round is not None:
+            # Calculate thresholds based on average round time and remaining time
+            threshold = 1 - 1000 * self.force_accept_at_remaining_turns * self.avg_time_per_round / self.progress.getDuration()
+            light_threshold = 1 - 5000 * self.force_accept_at_remaining_turns_light * self.avg_time_per_round / self.progress.getDuration()
+        
+        # Accept conditions
         conditions = [
-            self.profile.getUtility(bid) > 0.8,
-            progress > threshold,
+            utility > 0.9,                                   # Very good offer
+            utility >= target_utility,                       # Meets or exceeds our target
+            progress > threshold,                            # Very close to deadline
+            progress > light_threshold and utility >= target_utility - 0.05  # Approaching deadline with near-target utility
         ]
         return any(conditions)
 
     def find_bid(self) -> Bid:
-        # NOTE
-        # Use the opponent model to improve bidding strategy:
-        # 1. self.opponent_model.get_opponent_type() - Returns opponent type (HARDHEADED, CONCEDER, NEUTRAL)
-        # 2. self.opponent_model.get_top_issues(3) - Returns top 3 issues important to opponent as [(issue_id, weight),...]
-        # 3. self.opponent_model.get_predicted_utility(bid) - Estimate opponent's utility for a bid
-        # 4. self.opponent_model.best_bid_for_us - Best bid received (highest utility for us)
+        """Find a bid to offer based on Gahboninho's strategy
         
-        
-        # Current basic implementation below:
+        - Uses probing in early negotiation
+        - Uses target utility formula
+        - Randomly selects bids above target utility
+        - Considers opponent's best bid in late stages
         """
-        Determines the next bid to offer.
-        - Starts by offering bids from the top 1% ranked by utility.
-        - Expands the bid range dynamically as time progresses, up to the top 20%.
-        - If time is running out, proposes the best bid received from the opponent.
-        """
-
-        # Get the current progress of the negotiation (0 to 1 scale)
+        # Get current progress
         progress = self.progress.get(time() * 1000)
-
-        # Calculate the minimum utility threshold dynamically based on progress
-        # If the opponent's best bid meets the dynamically decreasing utility requirement, offer it
-        # Add randomness and variation to the threshold to make us less predictable
-        if self.best_bid is not None:
-            #min_utility_threshold = max(0.5, 1.4 - 0.9 * progress)
-            random_variation = uniform(-0.02, 0.02)
-            random_strategy = choice(['linear', 'quadratic'])
-            if random_strategy == 'linear':
-                min_utility_threshold = max(0.5, min(1.0, -0.5 * progress + 1 + random_variation))
-            else:
-                min_utility_threshold = max(0.5, min(1.0, -0.5 * (progress ** 2) + 1 + random_variation))
-
+        
+        # During probing phase, use high utility bids
+        if self.round_count < 5:
+            # Steadily concede during probing phase from 0.95 to 0.9
+            target_utility = max(0.9, 0.95 - self.round_count * 0.01)
+        else:
+            # After probing phase, use Gahboninho's formula
+            target_utility = self.calculate_target_utility(progress)
+        
+        # If we're near the deadline, consider using opponent's best bid
+        light_threshold = 0.95
+        if self.avg_time_per_round is not None:
+            light_threshold = 1 - 5000 * self.force_accept_at_remaining_turns_light * self.avg_time_per_round / self.progress.getDuration()
+            
+        if progress > light_threshold and self.best_bid is not None:
             best_bid_utility = float(self.profile.getUtility(self.best_bid))
-
-            if best_bid_utility >= min_utility_threshold:
+            if best_bid_utility >= target_utility - 0.1:
                 return self.best_bid
-
-        # Retrieve all possible bids in the domain
-        domain = self.profile.getDomain()
-        all_bids = AllBidsList(domain)
-        num_of_bids = all_bids.size()
-
-        # If bids with utilities haven't been calculated yet, compute them
+        
+        # Calculate bids with utilities if not done yet
         if self.bids_with_utilities is None:
             self.bids_with_utilities = []
-
-            # Calculate utility for each bid and store them in a list
-            for index in range(num_of_bids):
-                bid = all_bids.get(index)
+            for index in range(self.all_bids.size()):
+                bid = self.all_bids.get(index)
                 bid_utility = float(self.profile.getUtility(bid))
                 self.bids_with_utilities.append((bid, bid_utility))
-
-            # Sort bids by utility from high to low
+            
+            # Sort by utility (highest first)
             self.bids_with_utilities.sort(key=lambda tup: tup[1], reverse=True)
-
-        # Expand the range of acceptable bids over time (starts at 1% and increases gradually up to 20%)
-        increasing_percentage = min(0.01 + progress * 0.19, 0.2)
-        expanded_top_bids = max(5, floor(num_of_bids * increasing_percentage))
-
-        # Dynamically decrease threshold: as time progresses, the threshold lowers, making concessions more likely
-        #dynamic_threshold = max(0.5, 1 - progress * 0.5)
-
-        # If progress exceeds the threshold, offer the best bid from the opponent
-        #if progress > dynamic_threshold and self.best_bid is not None:
-        #    return self.best_bid
-
-        # Randomly select a bid from the expanded top bids range
-        next_bid = randint(0, expanded_top_bids - 1)
-        self.find_bid_result = self.bids_with_utilities[next_bid][0]
-
-         # RAFA: we're late in the negotiation, consider returning the best bid we received
-        progress = self.progress.get(time() * 1000)
-        if progress > 0.95 and self.opponent_model is not None and self.opponent_model.best_bid_for_us is not None:
-            return self.opponent_model.best_bid_for_us
-
+        
+        # Gahboninho approach: Find all bids that meet or exceed target utility
+        eligible_bids = []
+        for bid, utility in self.bids_with_utilities:
+            if utility >= target_utility:
+                eligible_bids.append((bid, utility))
+                # Limit to a reasonable number for efficiency
+                if len(eligible_bids) >= 100:
+                    break
+        
+        # If we have eligible bids, randomly select one
+        if eligible_bids:
+            return choice(eligible_bids)[0]
+        
+        # If no eligible bids found, fallback to a utility-based approach with expanding range
+        top_percentage = max(0.01, min(0.2, self.top_bids_percentage + progress * 0.19))
+        expanded_top_bids = max(5, floor(self.all_bids.size() * top_percentage))
+        next_bid = randint(0, min(expanded_top_bids, len(self.bids_with_utilities)) - 1)
+        
         return self.bids_with_utilities[next_bid][0]
