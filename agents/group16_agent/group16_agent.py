@@ -34,6 +34,10 @@ from .utils import wrapper
 class Group16Agent(DefaultParty):
     """
     The amazing Python geniusweb agent made by team 16.
+    Should store general information so that geniuse web works
+    Should store information about the current exchange that isn't related to the opponent
+    Opponent model should store information about the opponent
+    Opponent/Wrapper should store information about the opponent that we want persistent between encounters
     """
 
     def __init__(self):
@@ -53,7 +57,6 @@ class Group16Agent(DefaultParty):
         self.last_received_bid: Bid = None
         self.opponent_model: OpponentModel = None
         self.opponent = None
-        self.opponent_best_bid: Bid = None
         
         # Session tracking
         self.utility_at_finish: float = 0.0
@@ -180,10 +183,6 @@ class Group16Agent(DefaultParty):
             
             # set bid as last received
             self.last_received_bid = bid
-            
-            # Store best bid if this one has the highest utility for us so far
-            if hasattr(self.opponent_model, 'best_bid_for_us') and self.opponent_model.best_bid_for_us is not None:
-                self.opponent_best_bid = self.opponent_model.best_bid_for_us
 
     def my_turn(self):
         """This method is called when it is our turn. It should decide upon an action
@@ -284,8 +283,8 @@ class Group16Agent(DefaultParty):
 
         # RAFA: we're late in the negotiation, consider returning the best bid we received
         progress = self.progress.get(time() * 1000)
-        if progress > 0.95 and self.opponent_best_bid is not None:
-            return self.opponent_best_bid
+        if progress > 0.95 and self.opponent_model is not None and self.opponent_model.best_bid_for_us is not None:
+            return self.opponent_model.best_bid_for_us
 
         return best_bid
 

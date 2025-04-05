@@ -4,6 +4,9 @@ import os
 
 
 class Opponent:
+    '''
+    Used to store opponent information that we would like to stay persistent across sessions/encounters
+    '''
     def __init__(self, result=0, finalUtility=0, offerVariance=[], name="", sessions=None):
         self.result = result
         self.finalUtility = finalUtility
