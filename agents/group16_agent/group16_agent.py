@@ -71,6 +71,7 @@ class Group16Agent(DefaultParty):
         self.opponent = None
 
         self.all_bids: AllBidsList = None
+        self.eligible_bids: List[(Bid, float)] = []
         
         # Gahboninho utility parameters
         self.round_count: int = 0
@@ -444,19 +445,18 @@ class Group16Agent(DefaultParty):
             # python sort by utility (highest first)
             self.bids_with_utilities.sort(key=lambda tup: tup[1], reverse=True)
         
-        # find all bids above target utility
-        eligible_bids = []
-        for bid, utility in self.bids_with_utilities:
-            if utility >= target_utility:
-                eligible_bids.append((bid, utility))
-                # this has to be tested
-                # TEST
-                # if len(eligible_bids) >= 100:
-                #     break
+        # add all remaining bids above target utility
+        while len(self.bids_with_utilities) > 0:
+            current_bid, current_utility = self.bids_with_utilities[0]
+            if current_utility >= target_utility:
+                self.bids_with_utilities.pop(0)
+                self.eligible_bids.append((current_bid, current_utility))
+            else:
+                break
         
         # randomly select one
-        if eligible_bids:
-            return choice(eligible_bids)[0]
+        if self.eligible_bids:
+            return choice(self.eligible_bids)[0]
         
         # # no eligible bids found, fallback to a utility-based approach with expanding range
         # top_percentage = max(0.01, min(0.2, self.opponent_model.top_bids_percentage + progress * 0.19))
@@ -464,4 +464,4 @@ class Group16Agent(DefaultParty):
         # next_bid = randint(0, min(expanded_top_bids, len(self.bids_with_utilities)) - 1)
         # self.logger.log(logging.INFO, f"Interesting: {top_percentage}, {expanded_top_bids}, {next_bid}")
         
-        return self.bids_with_utilities[next_bid][0]
+        return self.all_bids.get(randint(0, self.all_bids.size()))
