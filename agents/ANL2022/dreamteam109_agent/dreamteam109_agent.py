@@ -123,6 +123,9 @@ class DreamTeam109Agent(DefaultParty):
             action = cast(ActionDone, data).getAction()
             actor = action.getActor()
 
+            # F: this is interesting, this is why we had the consistecy problem with
+            # the name and the location of the agent at the start
+            # now solved by the extra if check
             # ignore action if it is our action
             if actor != self.me:
                 if self.other is None:
