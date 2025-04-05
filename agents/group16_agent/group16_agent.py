@@ -1,5 +1,5 @@
 import logging
-from random import randint
+from random import randint, uniform, choice
 from time import time
 from typing import cast
 
@@ -25,6 +25,7 @@ from geniusweb.profileconnection.ProfileConnectionFactory import (
 )
 from geniusweb.progress.ProgressTime import ProgressTime
 from geniusweb.references.Parameters import Parameters
+from numpy import floor
 from tudelft_utilities_logging.ReportToLogger import ReportToLogger
 
 from .utils.opponent_model import OpponentModel
@@ -42,6 +43,9 @@ class Group16Agent(DefaultParty):
 
     def __init__(self):
         super().__init__()
+        self.find_bid_result = None
+        self.best_bid = None
+        self.bids_with_utilities = None
         self.logger: ReportToLogger = self.getReporter()
 
         self.domain: Domain = None
@@ -241,6 +245,11 @@ class Group16Agent(DefaultParty):
         if bid is None:
             return False
 
+        # Keep track of the best bid the opponent made so far
+        utility = self.profile.getUtility(bid)
+        if self.best_bid is None or self.profile.getUtility(self.best_bid) < utility:
+            self.best_bid = bid
+
         # progress of the negotiation session between 0 and 1 (1 is deadline)
         progress = self.progress.get(time() * 1000)
 
@@ -267,50 +276,69 @@ class Group16Agent(DefaultParty):
         
         
         # Current basic implementation below:
-        # compose a list of all possible bids
+        """
+        Determines the next bid to offer.
+        - Starts by offering bids from the top 1% ranked by utility.
+        - Expands the bid range dynamically as time progresses, up to the top 20%.
+        - If time is running out, proposes the best bid received from the opponent.
+        """
+
+        # Get the current progress of the negotiation (0 to 1 scale)
+        progress = self.progress.get(time() * 1000)
+
+        # Calculate the minimum utility threshold dynamically based on progress
+        # If the opponent's best bid meets the dynamically decreasing utility requirement, offer it
+        # Add randomness and variation to the threshold to make us less predictable
+        if self.best_bid is not None:
+            #min_utility_threshold = max(0.5, 1.4 - 0.9 * progress)
+            random_variation = uniform(-0.02, 0.02)
+            random_strategy = choice(['linear', 'quadratic'])
+            if random_strategy == 'linear':
+                min_utility_threshold = max(0.5, min(1.0, -0.5 * progress + 1 + random_variation))
+            else:
+                min_utility_threshold = max(0.5, min(1.0, -0.5 * (progress ** 2) + 1 + random_variation))
+
+            best_bid_utility = float(self.profile.getUtility(self.best_bid))
+
+            if best_bid_utility >= min_utility_threshold:
+                return self.best_bid
+
+        # Retrieve all possible bids in the domain
         domain = self.profile.getDomain()
         all_bids = AllBidsList(domain)
+        num_of_bids = all_bids.size()
 
-        best_bid_score = 0.0
-        best_bid = None
+        # If bids with utilities haven't been calculated yet, compute them
+        if self.bids_with_utilities is None:
+            self.bids_with_utilities = []
 
-        # take 500 attempts to find a bid according to a heuristic score
-        for _ in range(500):
-            bid = all_bids.get(randint(0, all_bids.size() - 1))
-            bid_score = self.score_bid(bid)
-            if bid_score > best_bid_score:
-                best_bid_score, best_bid = bid_score, bid
+            # Calculate utility for each bid and store them in a list
+            for index in range(num_of_bids):
+                bid = all_bids.get(index)
+                bid_utility = float(self.profile.getUtility(bid))
+                self.bids_with_utilities.append((bid, bid_utility))
 
-        # RAFA: we're late in the negotiation, consider returning the best bid we received
+            # Sort bids by utility from high to low
+            self.bids_with_utilities.sort(key=lambda tup: tup[1], reverse=True)
+
+        # Expand the range of acceptable bids over time (starts at 1% and increases gradually up to 20%)
+        increasing_percentage = min(0.01 + progress * 0.19, 0.2)
+        expanded_top_bids = max(5, floor(num_of_bids * increasing_percentage))
+
+        # Dynamically decrease threshold: as time progresses, the threshold lowers, making concessions more likely
+        #dynamic_threshold = max(0.5, 1 - progress * 0.5)
+
+        # If progress exceeds the threshold, offer the best bid from the opponent
+        #if progress > dynamic_threshold and self.best_bid is not None:
+        #    return self.best_bid
+
+        # Randomly select a bid from the expanded top bids range
+        next_bid = randint(0, expanded_top_bids - 1)
+        self.find_bid_result = self.bids_with_utilities[next_bid][0]
+
+         # RAFA: we're late in the negotiation, consider returning the best bid we received
         progress = self.progress.get(time() * 1000)
         if progress > 0.95 and self.opponent_model is not None and self.opponent_model.best_bid_for_us is not None:
             return self.opponent_model.best_bid_for_us
 
-        return best_bid
-
-    def score_bid(self, bid: Bid, alpha: float = 0.95, eps: float = 0.1) -> float:
-        """Calculate heuristic score for a bid
-
-        Args:
-            bid (Bid): Bid to score
-            alpha (float, optional): Trade-off factor between self interested and
-                altruistic behaviour. Defaults to 0.95.
-            eps (float, optional): Time pressure factor, balances between conceding
-                and Boulware behaviour over time. Defaults to 0.1.
-
-        Returns:
-            float: score
-        """
-        progress = self.progress.get(time() * 1000)
-
-        our_utility = float(self.profile.getUtility(bid))
-
-        time_pressure = 1.0 - progress ** (1 / eps)
-        score = alpha * time_pressure * our_utility
-
-        if self.opponent_model is not None:
-            opponent_utility = self.opponent_model.get_predicted_utility(bid)
-            opponent_score = (1.0 - alpha * time_pressure) * opponent_utility
-            score += opponent_score
-
-        return score
+        return self.bids_with_utilities[next_bid][0]
