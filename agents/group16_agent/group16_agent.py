@@ -1,5 +1,5 @@
 import logging
-from random import randint
+from random import randint, uniform, choice
 from time import time
 from typing import cast
 
@@ -220,6 +220,8 @@ class Group16Agent(DefaultParty):
         return all(conditions)
 
 
+    # paper 1:
+    # paper 2: https://www.researchgate.net/publication/2526436_Multi-Issue_Negotiation_Under_Time_Constraints
     def find_bid(self) -> Bid:
         """
         Determines the next bid to offer.
@@ -227,6 +229,26 @@ class Group16Agent(DefaultParty):
         - Expands the bid range dynamically as time progresses, up to the top 20%.
         - If time is running out, proposes the best bid received from the opponent.
         """
+
+        # Get the current progress of the negotiation (0 to 1 scale)
+        progress = self.progress.get(time() * 1000)
+
+        # Calculate the minimum utility threshold dynamically based on progress
+        # If the opponent's best bid meets the dynamically decreasing utility requirement, offer it
+        # Add randomness and variation to the threshold to make us less predictable
+        if self.best_bid is not None:
+            #min_utility_threshold = max(0.5, 1.4 - 0.9 * progress)
+            random_variation = uniform(-0.02, 0.02)
+            random_strategy = choice(['linear', 'quadratic'])
+            if random_strategy == 'linear':
+                min_utility_threshold = max(0.5, min(1.0, -0.5 * progress + 1 + random_variation))
+            else:
+                min_utility_threshold = max(0.5, min(1.0, -0.5 * (progress ** 2) + 1 + random_variation))
+
+            best_bid_utility = float(self.profile.getUtility(self.best_bid))
+
+            if best_bid_utility >= min_utility_threshold:
+                return self.best_bid
 
         # Retrieve all possible bids in the domain
         domain = self.profile.getDomain()
@@ -246,9 +268,6 @@ class Group16Agent(DefaultParty):
             # Sort bids by utility from high to low
             self.bids_with_utilities.sort(key=lambda tup: tup[1], reverse=True)
 
-        # Get the current progress of the negotiation (0 to 1 scale)
-        progress = self.progress.get(time() * 1000)
-
         # Expand the range of acceptable bids over time (starts at 1% and increases gradually up to 20%)
         increasing_percentage = min(0.01 + progress * 0.19, 0.2)
         expanded_top_bids = max(5, floor(num_of_bids * increasing_percentage))
@@ -259,21 +278,6 @@ class Group16Agent(DefaultParty):
         # If progress exceeds the threshold, offer the best bid from the opponent
         #if progress > dynamic_threshold and self.best_bid is not None:
         #    return self.best_bid
-
-#TODO: PUT THIS AT THE BEGINNING AND EXTEND IT FOR THE ENTIRE TIMELINE + MAKE IT A BIT RANDOM SO THAT IT'S UNPREDICTABLE
-        # Calculate the minimum utility threshold dynamically based on progress
-        # If the opponent's best bid meets the dynamically decreasing utility requirement, offer it
-        # Works like this:
-        # When progress = 0.5, offer opponent's best bid if its utility is > 0.95
-        # When progress = 0.7, offer opponent's best bid if its utility is > 0.77
-        # When progress = 0.9, offer opponent's best bid if its utility is > 0.59
-        min_utility_threshold = max(0.5, 1.4 - 0.9 * progress)
-
-        if self.best_bid is not None:
-            best_bid_utility = float(self.profile.getUtility(self.best_bid))
-
-            if best_bid_utility > min_utility_threshold:
-                return self.best_bid
 
         # Randomly select a bid from the expanded top bids range
         next_bid = randint(0, expanded_top_bids - 1)
