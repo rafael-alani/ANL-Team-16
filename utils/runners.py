@@ -1,3 +1,4 @@
+import math
 import shutil
 from collections import defaultdict
 from itertools import permutations
@@ -197,11 +198,15 @@ def process_results(results_class: SAOPState, results_dict: dict):
         utilities_final = [0, 0]
         result = "ERROR"
 
+    nash_values = [0.936910694, 0.5282021763]
     for i, actor in enumerate(results_dict["connections"]):
         position = actor.split("_")[-1]
         results_summary[f"agent_{position}"] = agent_translate[actor]
         results_summary[f"utility_{position}"] = utilities_final[i]
-    results_summary["nash_product"] = prod(utilities_final)
+        results_summary[f"delta_nash_{position}"] = abs(utilities_final[i] - nash_values[i])
+    results_summary["achieved_nash_product"] = prod(utilities_final)
+    results_summary["ideal_nash_product"] = prod(nash_values)
+    results_summary["percentage"] = prod(utilities_final) * 100 / prod(nash_values)
     results_summary["social_welfare"] = sum(utilities_final)
     results_summary["result"] = result
 
